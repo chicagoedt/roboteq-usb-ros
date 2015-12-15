@@ -56,15 +56,16 @@ std::string     trimBoth(const string& str, char ch)
     return trimRight( trimLeft( str, ch), ch);
 }
 
-
 MainWindow::MainWindow(void)
- : _comunicator(_logger, *this), _looped(0), _delay(0)
+ : _comunicator(_logger, *this), _looped(0), _delay(0),
+   _mode(RoboteqCom::eSerial)
 {
     CTorInit();
 }
 
 MainWindow::MainWindow(const string& title)
- : _comunicator(_logger, *this), _looped(0), _delay(0)
+ : _comunicator(_logger, *this), _looped(0), _delay(0),
+   _mode(RoboteqCom::eSerial)
 {
     _title = title;
     CTorInit();
@@ -87,15 +88,19 @@ bool    MainWindow::Initialize(int argc, char* argv[])
     if( argc == 1 )
         return false;
 
-    int         c;
-    string      filePath;
+    int                 c;
+    string              filePath;
 
-    while( (c = getopt( argc, argv, "p:d:f:l:")) != -1 )
+    while( (c = getopt( argc, argv, "p:d:f:l:c")) != -1 )
     {
         switch( c )
         {
             case 'p':
                 _device = optarg;
+                break;
+
+            case 'c':
+                _mode = RoboteqCom::eCAN;
                 break;
 
             case 'd':
@@ -116,7 +121,7 @@ bool    MainWindow::Initialize(int argc, char* argv[])
                 break;
 
             case 'l':
-                if( optarg != 0L)
+                if( optarg != 0L )
                 {
                     istringstream a2i( optarg );
 
@@ -169,12 +174,20 @@ bool    MainWindow::Initialize(int argc, char* argv[])
     if( _logger.Open(LOG_FILE_NAME, _comunicator.IsThreaded() ) == false )
         THROW_RUNTIME_ERROR(string("Failed to open ") + LOG_FILE_NAME);
 
-    _comunicator.Open( _device );
+    if( _mode == RoboteqCom::eSerial )
+        _logger.LogLine("Running Serial Mode");
+    else
+        _logger.LogLine("Running CAN Mode");
 
-    // Done in roboteqCom class
-    _comunicator.IssueCommand("?S");    // Query for speed and enters this speed
+    _comunicator.Open( _mode, _device );
+
+    if( _mode == RoboteqCom::eSerial )
+    {
+        // Done in roboteqCom class
+        _comunicator.IssueCommand("?S");    // Query for speed and enters this speed
                                         // request into telemetry system
-    _comunicator.IssueCommand("# 200"); // auto message responce is 200ms
+        _comunicator.IssueCommand("# 200"); // auto message responce is 200ms
+    }
 
     return true;
 }
@@ -222,7 +235,7 @@ void    MainWindow::EnterAutoCommandMode(void)
             if( _looped > 0 )
             {
                 napms(_delay);             
-                _comunicator.Open( _device );
+                _comunicator.Open(_mode, _device );
 
                 _comunicator.IssueCommand("# C");   // Clears out telemetry strings
                 _comunicator.IssueCommand("?S");    // Query for speed and enters this speed
@@ -623,7 +636,7 @@ void    MainWindow::AppendText(WINDOW* win, eMsgDir dir, const char* msg)
     wrefresh( _middle );
 }
 
-void    MainWindow::OnMsgEvent(IEventArgs& evt)
+void    MainWindow::OnMsgEvent(const IEventArgs& evt)
 {
     AppendText(_middle, eMsgDir_IN, evt.Reply().c_str() ); 
 

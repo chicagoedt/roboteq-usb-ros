@@ -46,7 +46,8 @@ namespace oxoocoffee
             {
                 eParity_None,
                 eParity_Even,
-                eParity_Odd
+                eParity_Odd,
+                eParity_Space
             };
 
             enum eDataSize
@@ -103,6 +104,12 @@ namespace oxoocoffee
 
             static  void    enumeratePorts(TList& lst, const string& path = "/dev/");
             static  void    printPorts(void);
+
+            eCanonical      Canonical(void)   const { return _canonical; }
+            eParity         Parity(void)      const { return _parity; }
+            eDataSize       DataSize(void)    const { return _dataSize; }
+            eStopBit        StopBit(void)     const { return _stopBit; }
+            eFlow           Flow(void)        const { return _flow; }
 
         private:
                     void    applySettings(void);

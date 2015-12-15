@@ -4,18 +4,59 @@ typedef std::vector<std::string> TStrVec;
 void    Split(TStrVec& vec, const string& str);
 
 RosRoboteqDrv::RosRoboteqDrv(void)
- : _comunicator(*this, *this)
+ : _logEnabled(false), _comunicator(*this, *this)
 {
-
 }
 
-void    RosRoboteqDrv::Initialize()
+bool    RosRoboteqDrv::Initialize()
 {
     try
     {
+        std::string mode;
+
+        if (ros::param::get("~mode", mode) == false )
+        {
+            ROS_FATAL_STREAM_NAMED(NODE_NAME, " Please specify mode parameter");
+            return false;
+        }
+
+        std::transform(mode.begin(), mode.end(), mode.begin(), ::tolower);
+
+        std::string device;
+
+        if (ros::param::get("~device", device) == false )
+        {
+            ROS_FATAL_STREAM_NAMED(NODE_NAME, " Please specify device parameter");
+            return false;
+        }
+
+        if (ros::param::get("~left", _left) == false )
+        {
+            ROS_FATAL_STREAM_NAMED(NODE_NAME, " Please specify left parameter");
+            return false;
+        }
+
+        if (ros::param::get("~right", _right) == false )
+        {
+            ROS_FATAL_STREAM_NAMED(NODE_NAME, " Please specify right parameter");
+            return false;
+        }
+
+        ROS_INFO_STREAM_NAMED(NODE_NAME, "Channels Right: " << _right << ", Left: " << _left);
+
         _pub = _nh.advertise<geometry_msgs::Twist>("current_velocity", 1); 
-        // Make sure roboteq configuration has roboteq on!! "^ECHOF 1"
-        _comunicator.Open(ROBO_DEV_PATH);
+
+        _service = _nh.advertiseService("set_actuators", &RosRoboteqDrv::SetActuatorPosition, this); 
+//        _service = _nh.advertiseService("manual_CAN_command", &RosRoboteqDrv::ManualCANCommand, this);
+
+        // Do not remove below line. Else it will
+        // not print diag msg from lower libs
+        _logEnabled = true;
+
+        if( mode == "can" )
+        	_comunicator.Open(RoboteqCom::eCAN, device);
+        else
+        	_comunicator.Open(RoboteqCom::eSerial, device);
         
         if(_comunicator.Version().empty() )
             THROW_RUNTIME_ERROR("Failed to receive Roboteq Version");
@@ -27,17 +68,24 @@ void    RosRoboteqDrv::Initialize()
             THROW_RUNTIME_ERROR("Failed to spawn RoboReader Thread");
         
         _comunicator.IssueCommand("# C");   // Clears out telemetry strings
-        _comunicator.IssueCommand("?S");    // Query for speed and enters this speed 
+
+	    if( _comunicator.Mode() == RoboteqCom::eSerial )
+	    {
+            _comunicator.IssueCommand("?S");    // Query for speed and enters this speed 
                                             // request into telemetry system
-        _comunicator.IssueCommand("# 100"); // auto message response is 500ms
+            _comunicator.IssueCommand("# 100"); // auto message response is 500ms
+	    }
 
         _sub = _nh.subscribe("cmd_vel", 1, &RosRoboteqDrv::CmdVelCallback, this);
+        _buttonSub = _nh.subscribe("xbox_controller", 1, &RosRoboteqDrv::XButtonCallback, this);
     }
     catch(std::exception& ex)
     {
         ROS_ERROR_STREAM_NAMED(NODE_NAME,"Open Port Failed. Error: " << ex.what());
-	throw;
+        throw;
     }
+
+    return true;
 }
 
 void    RosRoboteqDrv::Shutdown(void)
@@ -45,9 +93,50 @@ void    RosRoboteqDrv::Shutdown(void)
     _comunicator.Close();
 }
 
+void    RosRoboteqDrv::XButtonCallback(const base_controller::Xbox_Button_Msg::ConstPtr& buttons)
+{
+    std::stringstream ss;
+
+    if( _comunicator.Mode() == RoboteqCom::eCAN )
+    {
+        if(buttons->a != 0)
+        {
+            ROS_INFO("--Going to DIG position--");
+            ss << "@04!G 1 900_@04!G 2 900";
+        }
+        else if(buttons->y != 0)
+        {
+            ROS_INFO("--Going to DUMP position--");
+            ss << "@04!G 1 -1000_@04!G 2 -1000";
+        }
+        else if(buttons->b != 0)
+        {
+            ROS_INFO("--Going to DRIVE position--");
+            ss << "@04!G 1 0_@04!G 2 0";
+        }
+    }
+
+    try
+    {
+        _comunicator.IssueCommand(ss.str());
+        ROS_INFO_STREAM("Actuator= " << ss.str());
+    }
+    catch(std::exception& ex)
+    {
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : " << ex.what());
+        throw;
+    }
+    catch(...)
+    {
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : ?");
+        throw;
+    }
+
+}
+
 void    RosRoboteqDrv::CmdVelCallback(const geometry_msgs::Twist::ConstPtr& twist_velocity)
 {
-    _wheelVelocity = RosRoboteqDrv::ConvertTwistToWheelVelocity(twist_velocity);
+    _wheelVelocity = ConvertTwistToWheelVelocity(twist_velocity);
 
     float leftVelRPM  = _wheelVelocity.left  / RPM_TO_RAD_PER_SEC;
     float rightVelRPM = _wheelVelocity.right / RPM_TO_RAD_PER_SEC;
@@ -56,48 +145,99 @@ void    RosRoboteqDrv::CmdVelCallback(const geometry_msgs::Twist::ConstPtr& twis
 
     std::stringstream ss;
 
-    if (leftVelRPM >= 0)
-        ss << "!G 2 " << (((int)leftVelRPM) * 100);
+    if( _comunicator.Mode() == RoboteqCom::eSerial )
+    {
+        ss << "!G " << _left << " " << (((int)leftVelRPM) * 100);
+        ss << "_!G " << _right << " " << (((int)rightVelRPM) * 100);
+    }
     else
-        ss << "!G 2 " << (((int)leftVelRPM) * 100);
-
-    try
     {
-    	_comunicator.IssueCommand(ss.str());
-    }
-    catch(std::exception& ex)
-    {
-        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand G2 Error: " << ex.what());
-	throw;
-    }
-    catch(...)
-    {
-        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand G2");
-	throw;
-    }
+       // ss << "@00!G " << _left << " " << (((int)leftVelRPM) * 100);
+       // ss << "_@00!G " << _right << " " << (((int)rightVelRPM) * 100);
+        
+        for( int i = 1; i <= 3; i++) // 3 is number of wheel pairs
+        {
+            if( i != 1 )
+                ss << "_";
 
-    ss.str(""); // Clear previouse contents
-
-    if (rightVelRPM >= 0)
-        ss << "!G 1 " << (((int)rightVelRPM) * 100);
-    else
-        ss << "!G 1 " << (((int)rightVelRPM) * 100);
+            ss <<  "@0" << i << "!G " << _left  << " " << (((int)leftVelRPM)  * 100);
+            ss << "_@0" << i << "!G " << _right << " " << (((int)rightVelRPM) * 100);
+        }
+    }
 
     try
     {
         _comunicator.IssueCommand(ss.str());
+        ROS_INFO_STREAM("Wheels= " << ss.str());
     }
     catch(std::exception& ex)
     {
-        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand G1 : " << ex.what());
-	throw;
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : " << ex.what());
+	    throw;
     }
     catch(...)
     {
-        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand G1 : ?");
-	throw;
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : ?");
+	    throw;
+    }
+}
+
+bool RosRoboteqDrv::SetActuatorPosition(TSrvAct_Req &req, TSrvAct_Res &res)
+{
+    std::stringstream ss;
+
+    if( _comunicator.Mode() == RoboteqCom::eCAN )
+    {
+        ss << "@04!G 1 " << req.actuator_position;
+        ss << "_@04!G 2 " << req.actuator_position;
+
+        // ss << "@00!G 1 " << req.actuator_position;
+        // ss << "_@00!G 2 " << req.actuator_position;
     }
 
+    try
+    {
+        _comunicator.IssueCommand(ss.str());
+        ROS_INFO_STREAM("Actr= " << ss.str());
+    }
+    catch(std::exception& ex)
+    {
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : " << ex.what());
+        throw;
+    }
+    catch(...)
+    {
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : ?");
+        throw;
+    }
+    return true;
+}
+
+bool RosRoboteqDrv::ManualCANCommand(TSrvCAN_Req &req, TSrvCAN_Res &res)
+{
+    std::stringstream ss;
+
+    if( _comunicator.Mode() == RoboteqCom::eCAN )
+    {
+        ss << "@0" << req.can_id  << "!G " << req.channel << " " << req.speed;
+    }
+
+    try
+    {
+        _comunicator.IssueCommand(ss.str());
+        ROS_INFO_STREAM("ManualCMD= " << ss.str());
+    }
+    catch(std::exception& ex)
+    {
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : " << ex.what());
+        throw;
+    }
+    catch(...)
+    {
+        ROS_ERROR_STREAM_NAMED(NODE_NAME,"IssueCommand : ?");
+        throw;
+    }
+    return true;
 }
 
 geometry_msgs::Twist RosRoboteqDrv::ConvertWheelVelocityToTwist(float left_velocity, float right_velocity)
@@ -128,7 +268,7 @@ roboteq_node::wheels_msg RosRoboteqDrv::ConvertTwistToWheelVelocity(const geomet
 }
 
 // RoboteqCom Events
-void    RosRoboteqDrv::OnMsgEvent(IEventArgs& evt)
+void    RosRoboteqDrv::OnMsgEvent(const IEventArgs& evt)
 {
 	ROS_DEBUG_STREAM_NAMED(NODE_NAME, "OnMsgEvent: " << evt.Reply());
 
@@ -180,16 +320,16 @@ void	RosRoboteqDrv::Process_S(const IEventArgs& evt)
 			            wheelVelocity.left		= secondVal * RPM_TO_RAD_PER_SEC;
 
                         _pub.publish(RosRoboteqDrv::ConvertWheelVelocityToTwist(wheelVelocity.left, wheelVelocity.right));
-                        ROS_INFO_STREAM("Wheel RPM's: " << firstVal << " :: " << secondVal);
+                        //ROS_INFO_STREAM("Wheel RPM's: " << firstVal << " :: " << secondVal);
                 }
                 else
 		        {
-                  	ROS_ERROR_STREAM("Invalid(2) S Reply Format");
+                  	ROS_ERROR_STREAM_NAMED(NODE_NAME,"Invalid(2) S Reply Format");
 		        }
         }
         else
 	    {
-                ROS_ERROR_STREAM("Invalid(1) S Reply Format");
+                ROS_ERROR_STREAM_NAMED(NODE_NAME,"Invalid(1) S Reply Format");
 	    }
 	}
 	catch(std::exception& ex)
@@ -214,31 +354,31 @@ void	RosRoboteqDrv::Process_N(const IEventArgs& evt)
 
 bool    RosRoboteqDrv::IsLogOpen(void) const
 {
-    return false;
+    return _logEnabled;
 }
 
 // RoboteqCom and app Log Messages. Do append newline
 void    RosRoboteqDrv::LogLine(const char* pBuffer, unsigned int len)
 {
-    ROS_INFO_STREAM(std::string(pBuffer, len));
+    ROS_INFO_STREAM_NAMED(NODE_NAME," - " << pBuffer);
 }
 
 // RoboteqCom and app Log Messages. Do append newline
 void    RosRoboteqDrv::LogLine(const std::string& message)
 {
-	ROS_INFO_STREAM(message);
+	ROS_INFO_STREAM_NAMED(NODE_NAME," - " << message);
 }
 
 // RoboteqCom and app Log Messages. Do not append newline
 void    RosRoboteqDrv::Log(const char* pBuffer, unsigned int len)
 {
-    ROS_INFO_STREAM(std::string(pBuffer, len));
+    ROS_INFO_STREAM_NAMED(NODE_NAME," - " << pBuffer);
 }
 
 // RoboteqCom and app Log Messages. Do not append newline
 void    RosRoboteqDrv::Log(const std::string& message)
 {
-	ROS_INFO_STREAM(message);
+	ROS_INFO_STREAM_NAMED(NODE_NAME,message);
 }
 
 void    Split(TStrVec& vec, const string& str)

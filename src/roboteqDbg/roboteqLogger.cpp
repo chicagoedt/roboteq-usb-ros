@@ -1,8 +1,12 @@
 #include "roboteqLogger.h"
- 
-bool    RoboteqLogger::Open(const string& filePath, bool threded)
+
+RoboteqLogger::RoboteqLogger()
 {
-    _mx       = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_init(&_mx, NULL);
+}
+
+bool    RoboteqLogger::Open(const string& filePath, bool threded)
+{ 
     _threaded = threded;
 
     Close();

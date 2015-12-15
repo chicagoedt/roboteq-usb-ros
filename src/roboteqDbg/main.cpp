@@ -14,6 +14,7 @@ static void PrintHelp(std::string progName)
     cout << endl;
     cout << "Usage: " << progName << " -p /dev/tty.???" << endl;
     cout << "   -p /dev/tty.???    - path to device" << endl;
+    cout << "   -c                 - CAN mode. Serial is default" << endl;
     cout << "   -l count           - number of restarts" << endl;
     cout << "   -d ms              - ms delay between connect/disconnect" << endl;
     cout << "   -f cmdFile.robo    - comands to run on each connect" << endl;
@@ -22,13 +23,13 @@ static void PrintHelp(std::string progName)
 
 static void SigInt(int sig)
 {
-    if( app != 0L )
+    if( app != 0L && sig == SIGINT)
         app->Shutdown();
 }
 
 static void SigResize(int sig)
 {
-    if( app != 0L )
+    if( app != 0L && sig == SIGWINCH)
         app->ResizeNotify();
 }
 

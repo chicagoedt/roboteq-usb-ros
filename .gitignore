@@ -1,2 +1,9 @@
 roboteq_node/src/roboteqCom/roboteqCom
 roboteq_node/src/roboteqDbg/roboteqDbg
+src/roboteqCom/build/
+src/roboteqCom/roboteqCom
+src/roboteqDbg/roboteqDbg
+*.o
+*.log
+*.user
+*.pri

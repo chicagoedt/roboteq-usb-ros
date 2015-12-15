@@ -10,7 +10,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "roboteq_driver");
 
     int	 sleepTime(300);
-    int  keepRunnning(5);
+    int  keepRunnning(3);
 
     while(keepRunnning)
     {
@@ -23,7 +23,9 @@ int main(int argc, char **argv)
         try
         {
             ROS_WARN_STREAM_NAMED(NODE_NAME,"Initializing");
-            roboteqDrv.Initialize();
+
+            if( roboteqDrv.Initialize() == false )
+                return -1;
 
             ROS_WARN_STREAM_NAMED(NODE_NAME,"Entering Run Loop");
             ros::spin();

@@ -1,16 +1,26 @@
 #include "roboteqCom.h"
 #include <unistd.h>
 #include <string.h> // For strtok
+#include <iomanip>
 
 namespace oxoocoffee
 {
 
-#define     ROBO_SND_TERMINATOR		"\r"
-#define     ROBO_RCV_TERMINATOR		'\n'	
-#define	    ROBO_MSG_MAX		    1024
+#define     ROBO_TERMINATOR		'\r'
+#define	    ROBO_MSG_MAX		1024
+
+string ToHex(const string& s, bool upper_case /* = true */)
+{
+    ostringstream ret;
+
+    for (string::size_type i = 0; i < s.length(); ++i)
+        ret << std::setw(2) << std::setfill('0') << std::hex << (upper_case ? std::uppercase : std::nouppercase) << (int)s[i];
+
+    return ret.str();
+}
 
 RoboteqCom::RoboteqCom(SerialLogger& log)
- : _port(log), _event(_dummyEvent), _thread(*this)
+ : _port(log), _mode(eSerial), _event(_dummyEvent), _thread(*this)
 {
     // This is just to shut up compiler warning
     // of _dummyEvent not used
@@ -21,28 +31,34 @@ RoboteqCom::RoboteqCom(SerialLogger& log)
 }
 
 RoboteqCom::RoboteqCom(SerialLogger& log, IRoboteqEvent& event)
- : _port(log), _event(event), _thread(*this)
+ : _port(log), _mode(eSerial), _event(event), _thread(*this)
 {
     CTorInit();
 }
 
 void    RoboteqCom::CTorInit(void)
 {
-    _port.canonical(SerialPort::eCanonical_Enable);
+}
+
+void    RoboteqCom::Open(eMode mode, const string& device)
+{
+    _mode = mode;
+
+    if( mode == eSerial )
+        _port.logLine("RoboteqCom - connecting [SERIAL]");
+    else
+        _port.logLine("RoboteqCom - connecting [CAN]");
+
+    _port.canonical(SerialPort::eCanonical_Disable);
     _port.baud(115200);
     _port.dateSize(SerialPort::eDataSize_8Bit);
     _port.stopBit(SerialPort::eStopBit_1);
     _port.parity(SerialPort::eParity_None);
     _port.flowControl(SerialPort::eFlow_None);
-}
-
-void    RoboteqCom::Open(const string& device)
-{
-    _port.logLine("RoboteqCom - connecting");
 
     _port.connect( device );
 
-    _port.logLine("RoboteqCom - connected ");
+    _port.logLine("RoboteqCom - connected");
 
     if( IssueCommand("#") <= 0 )
     {
@@ -56,16 +72,20 @@ void    RoboteqCom::Open(const string& device)
          throw std::runtime_error("RoboteqCom - Clears out telemetry strings FAILED ");
     }
 
-    if( IssueCommand("^ECHOF 0") <= 0)
+    if( IssueCommand("^ECHOF 1") <= 0)
     {
-	_port.log("RoboteqCom - ECHO OFF send FAILED ");
+         _port.log("RoboteqCom - ECHO OFF send FAILED ");
          throw std::runtime_error("RoboteqCom - ECHO OFF Send FAILED ");
     }
 
+    if( Synchronize( ) == false )
+    {
+        _port.log("RoboteqCom - RoboteqCom - Synchronization Failed ^ECHOF 1");
+        throw std::runtime_error("RoboteqCom - RoboteqCom - Synchronization Failed ^ECHOF 1");
+    }
 
-    // Eat all messages untill we get '+' from "^ECHOF 0". We know we are not in sync.
-    while(ReadReply( _version ) > 0 && _version[0] != '+' )
-	;
+    if( _port.isOpen() == false )
+        throw std::runtime_error("RoboteqCom - Synchronization Failed");
 
     if( IssueCommand("?$1E") > 0 )
     {
@@ -135,7 +155,11 @@ void    RoboteqCom::Close(void)
     _mtx.UnLock();
 
     if( _event.Type() == IRoboteqEvent::eReal )
+    {
+        _port.logLine("RoboteqCom - joining reader");
         _thread.Join();
+        _port.logLine("RoboteqCom - joining reader done");
+    }
 }
 
 int     RoboteqCom::IssueCommand(const char* buffer, int size)
@@ -148,80 +172,105 @@ int     RoboteqCom::IssueCommand(const string&  command,
 {
     if( _thread.IsRunning() )
     {
-	RoboScopedMutex lock(_mtx);
+        //RoboScopedMutex lock(_mtx);
 	
         if(args == "")
-            return _port.write(command + ROBO_SND_TERMINATOR);
+            return _port.write(command + ROBO_TERMINATOR);
         else
-            return _port.write(command + " " + args + ROBO_SND_TERMINATOR);
+            return _port.write(command + " " + args + ROBO_TERMINATOR);
     }
     else
     {
         if(args == "")
-            return _port.write(command + ROBO_SND_TERMINATOR);
+            return _port.write(command + ROBO_TERMINATOR);
         else
-            return _port.write(command + " " + args + ROBO_SND_TERMINATOR);
+            return _port.write(command + " " + args + ROBO_TERMINATOR);
     }
 }
 
 int    RoboteqCom::ReadReply(string& reply)
 {
-    if( _thread.IsRunning() )
-        throw std::runtime_error("RoboteqCom - ReadReply() not allowed when running is threaded mode");
- 
     reply.clear();
 
-    char buf[ROBO_MSG_MAX + 1];
-    int  countRcv;
-    
-    while(true)
+    if( _port.Canonical() == SerialPort::eCanonical_Enable )
     {
-    	if( (countRcv = _port.read(buf, ROBO_MSG_MAX)) <= 0 )
-	    break;
+        char buf[ROBO_MSG_MAX + 1];
+        int  countRcv(0);
 
+        if( (countRcv = _port.read(buf, ROBO_MSG_MAX)) <= 0 )
+            return 0;
+
+        buf[countRcv] = 0;
         reply.append(buf, countRcv);
 
-        if( buf[countRcv-1] == ROBO_RCV_TERMINATOR )
-            return reply.length();
+        return reply.length();
     }
+    else
+    {
+        char byte;
 
-    return countRcv;
+        while(true)
+        {
+            if( _port.read(&byte, 1) <= 0 )
+                break;
+
+            if( byte == ROBO_TERMINATOR )
+            {
+                if( reply.size() == 0 )
+                    continue;
+
+                return reply.length();
+            } 
+
+            reply.append(&byte, 1);
+        }
+
+        return 0;
+    }
 }
 
+bool    RoboteqCom::Synchronize(void)
+{
+    char byte;
+
+    while(true)
+    {
+        if( _port.read(&byte, 1) <= 0 )
+            break;
+
+        if( byte == '+' )
+            return true;
+    }
+
+    return false;
+}
 
 // This methods runs on seperate thread
 void    RoboteqCom::Run(void)
 {
-    int  countRcv;
-    char buf[ROBO_MSG_MAX + 1];
+    string buffer;
 
-    while( _port.isOpen() )
+    try
     {
-        _mtx.Lock();
-       	countRcv = _port.read(buf, ROBO_MSG_MAX); // ROBO_MSG_MAX - totalRcv);
-	_mtx.UnLock();
-
-	        if( countRcv > 0 )
+        while( _port.isOpen() )
+        {
+            if( ReadReply(buffer) > 0 && buffer.size() > 0 )
             {
-	    if( countRcv > 1 && buf[countRcv-1] == ROBO_RCV_TERMINATOR )
-            	{
-                if(buf[0] != '+')
-                    {
-                    IEventArgs evt(string(buf, countRcv-1));
-
-                        _event.OnMsgEvent( evt );
-                    }
-            	}
-	        }
-	        else 
-            {
-		        _mtx.Lock();
-		        _port.disconnect();
-		        _mtx.UnLock();
-		        break;
+                if(buffer[0] != '+')
+                {
+                    IEventArgs evt( buffer);
+                    _event.OnMsgEvent( evt );
+                }
             }
         }
     }
+    catch(...)
+    {
+        _port.logLine("RoboteqCom - reader exiting EXCEPTION");
+    }
+
+    _port.logLine("RoboteqCom - reader exiting");
+}
 
 }   // End of oxoocoffee namespace
 

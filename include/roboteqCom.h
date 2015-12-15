@@ -28,17 +28,23 @@ namespace oxoocoffee
 
 class RoboteqCom : public IRunnable
 {
-    typedef IEventListener<IEventArgs>  IRoboteqEvent;
-    typedef IDummyListener<IEventArgs>  IDummyEvent;
+    typedef IEventListener<const IEventArgs>  IRoboteqEvent;
+    typedef IDummyListener<const IEventArgs>  IDummyEvent;
 
     public:
+        enum eMode
+        {
+            eSerial,
+            eCAN
+        };
+
         // Non threaded version
         RoboteqCom(SerialLogger& log);
 
         // Threaded version. We are using this one!!
         RoboteqCom(SerialLogger& log, IRoboteqEvent& event);
     
-        void    Open(const string& device);
+        void    Open(eMode mode, const string& device);
         void    Close(void);
 
         int     IssueCommand(const char* buffer, int size);
@@ -51,12 +57,16 @@ class RoboteqCom : public IRunnable
         inline       bool    IsThreaded(void)      const { return _event.Type() == IRoboteqEvent::eReal; }
         inline const string& Version(void)         const { return _version; }
         inline const string& Model(void)           const { return _model; }
+        inline       eMode   Mode(void)            const { return _mode; }
 
     protected:
         // IRunnable override
         // Run is run the thread
         // Join blocks for the thread to finish
         virtual void Run(void);
+
+        // Used to synchronize on startup
+        bool    Synchronize(void);
 
     private:
         void    CTorInit(void);
@@ -66,10 +76,11 @@ class RoboteqCom : public IRunnable
         string          _version;
         string          _model;
         SerialPort      _port;
+        eMode           _mode;
         IRoboteqEvent&  _event;
         IDummyEvent     _dummyEvent; // do not use it. Only used to init _event reference
         RoboteqThread   _thread;        
-	RoboMutex	_mtx;
+        RoboMutex	    _mtx;
 };
 
 }   // End of amespace oxoocoffee

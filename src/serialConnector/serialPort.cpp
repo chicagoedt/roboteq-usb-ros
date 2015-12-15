@@ -40,7 +40,15 @@ void    SerialPort::connect(const string& device)
     if( _logger.IsLogOpen() )
         _logger.LogLine("SerialPort - opening " + device );
 
-    _fd = open(device.c_str(), O_RDWR | O_NOCTTY); // | O_NDELAY); 
+    // The O_NOCTTY flag tells UNIX that this program doesn't
+    //     want to be the controlling entity for that port.
+    //     If you don't specify this, the device file will be owned by you,
+    //     and any input (such as keyboard abort signals and so forth)
+    //     will affect your process
+    // The O_NDELAY flag tells UNIX that this program doesn't care what
+    //     state the DCD signal line is at - whether the other end of
+    //     the port is up and running
+    _fd = open(device.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
 
     if( isOpen() == false )
         THROW_RUNTIME_ERROR("SerialPort - failed to open device");
@@ -50,6 +58,8 @@ void    SerialPort::connect(const string& device)
         disconnect();
         THROW_RUNTIME_ERROR("SerialPort - invalid device");
     }
+
+    fcntl(_fd, F_SETFL, 0);
 
     applySettings();
 
@@ -211,11 +221,12 @@ int     SerialPort::write(const char* pBuffer, const unsigned int numBytes)
 int     SerialPort::read(char* pBuffer, const unsigned int numBytes)
 {
     if( _fd == INVALID_FD )
-	return _fd;
+        return _fd;
     else if( pBuffer == 0L )
         THROW_RUNTIME_ERROR("SerialPort - trying to read to null pointer")
 
-        return ::read(_fd, pBuffer, numBytes);
+    pBuffer[0] = 0;
+    return ::read(_fd, pBuffer, numBytes);
 }
 
 void    SerialPort::enumeratePorts(SerialPort::TList& lst, const string& path)
@@ -284,46 +295,9 @@ void    SerialPort::applySettings(void)
 {
     if( isOpen() )
     {
-        termios newtio;
-
-	bzero(&newtio, sizeof(newtio));
-
-	newtio.c_cflag = _baud | CRTSCTS | CS8 | CLOCAL | CREAD;
-	newtio.c_iflag = IGNPAR | ICRNL;
-	newtio.c_oflag = 0;
-	newtio.c_lflag = ICANON;
-
-	newtio.c_cc[VINTR]    = 0;     // Ctrl-c 
-        newtio.c_cc[VQUIT]    = 0;     /* Ctrl-\ */
-        newtio.c_cc[VERASE]   = 0;     // del
-        newtio.c_cc[VKILL]    = 0;     // @
-        newtio.c_cc[VEOF]     = 4;     // Ctrl-d
-        newtio.c_cc[VTIME]    = 0;     // inter-character timer unused
-        newtio.c_cc[VMIN]     = 1;     // blocking read until 1 character arrives
-        newtio.c_cc[VSWTC]    = 0;     // '\0'
-        newtio.c_cc[VSTART]   = 0;     // Ctrl-q 
-        newtio.c_cc[VSTOP]    = 0;     // Ctrl-s
-        newtio.c_cc[VSUSP]    = 0;     // Ctrl-z
-        newtio.c_cc[VEOL]     = 0;     // '\0'
-        newtio.c_cc[VREPRINT] = 0;     // Ctrl-r
-        newtio.c_cc[VDISCARD] = 0;     // Ctrl-u
-        newtio.c_cc[VWERASE]  = 0;     // Ctrl-w
-        newtio.c_cc[VLNEXT]   = 0;     // Ctrl-v
-        newtio.c_cc[VEOL2]    = 0;     // '\0' 
-
-	tcflush(_fd, TCIFLUSH);
-
-        if(tcsetattr(_fd, TCSANOW, &newtio)!= 0)
-        {
-            ostringstream err; err << "SerialPort - failed to apply changes. errno: " << errno;
-            disconnect();
-            THROW_RUNTIME_ERROR(err.str());
-        }
-
-/*
         termios options;
 
-	bzero(&options, sizeof(options));
+        bzero(&options, sizeof(options));
 
         if( tcgetattr(_fd, &options) != 0)
         {
@@ -331,7 +305,7 @@ void    SerialPort::applySettings(void)
             disconnect();
             THROW_RUNTIME_ERROR(err.str());
         }
-
+    
         // Set the read and write speed 
         if( ::cfsetispeed(&options, _baud) != 0)
             THROW_RUNTIME_ERROR("SerialPort - failed to set input baud speed");
@@ -339,60 +313,84 @@ void    SerialPort::applySettings(void)
         if( ::cfsetospeed(&options, _baud) != 0)
             THROW_RUNTIME_ERROR("SerialPort - failed to set output baud speed");
 
-        // Enable the receiver and set local mode
+        // Enable the receiver and set local mod
         options.c_cflag |= (CLOCAL | CREAD);
+
+        // Mask the character size bits
+        options.c_cflag &= ~CSIZE; 
 
         switch( _dataSize )
         {
             case eDataSize_5Bit:
-                options.c_cflag = (options.c_cflag & ~CSIZE) | CS5; break;
+                options.c_cflag |= CS5; break;
             case eDataSize_6Bit:
-                options.c_cflag = (options.c_cflag & ~CSIZE) | CS6; break;
+                options.c_cflag |= CS6; break;
             case eDataSize_7Bit:
-                options.c_cflag = (options.c_cflag & ~CSIZE) | CS7; break;
+                options.c_cflag |= CS7; break;
             case eDataSize_8Bit:
-                options.c_cflag = (options.c_cflag & ~CSIZE) | CS8; break;
+                options.c_cflag |= CS8; break;
             default:
                 THROW_INVALID_ARG("SerialPort - invalid date size"); break;
         }
-
-        options.c_cflag &= ~(PARENB | PARODD); 
-
-        if( _parity == eParity_Even )
+       
+        if( _parity == eParity_None || _parity == eParity_Space ) 
+        {
+            options.c_cflag &= ~PARENB;
+            options.c_cflag &= ~CSTOPB;
+            options.c_iflag = 0;
+        }
+        else if( _parity == eParity_Even )
+        {
+            options.c_cflag &= ~PARODD;
             options.c_cflag |= PARENB;
+            options.c_iflag |= (INPCK | ISTRIP);
+        }
         else if( _parity == eParity_Odd )
+        {
             options.c_cflag |= (PARENB | PARODD);
+            options.c_iflag |= (INPCK | ISTRIP);
+        }
 
         if( _stopBit == eStopBit_1 )
             options.c_cflag &= ~CSTOPB;
         else
             options.c_cflag |= CSTOPB;
 
-        // Clear Software and Hardware Flow
-        options.c_cflag &= ~CRTSCTS;                // Hardware 
-        options.c_iflag &= ~(IXON | IXOFF | IXANY); // Software
-
-        if( _flow == eFlow_Hardware )
+        if( _flow == eFlow_None )
+        {
+#ifdef CNEW_RTSCTS
+            options.c_cflag &= ~CNEW_RTSCTS;
+#endif
+            options.c_iflag &= ~(IXON | IXOFF | IXANY);
+        }
+        else if( _flow == eFlow_Hardware )
             options.c_cflag |= CRTSCTS;
         else if( _flow == eFlow_Software )
-            options.c_iflag |= (IXON | IXOFF); 
-
+            options.c_iflag |= (IXON | IXOFF);
+ 
         // Line Mode (Canonical) or Raw Mode
-        if( _canonical == eCanonical_Enable ) 
+        if( _canonical == eCanonical_Enable )
         {
-            options.c_oflag = 0; //|= OPOST;               // Convert newlines into CR and LFs
-            options.c_lflag = 0; // |= ICANON;
+            // options.c_lflag |= (ICANON | ECHO | ECHOE);
+            options.c_lflag |= (ICANON | ECHO | ECHOE | ECHOK | ECHOKE | ECHONL);
+            // Mac options.c_lflag |= (ICANON | ECHO | ECHOE);
+            options.c_oflag |= OPOST;   // Postprocess output
+            options.c_lflag |= ECHOPRT; // Echo erased character as character erased
+
+            options.c_cc[VEOF]     = 0x04;  // ^D end of transmission
+            options.c_cc[VEOL]     = 0x0D;  // ^M carriage return
         }
         else
-        { 
-            //options.c_oflag &= ~OPOST;              // Do NOT convert newlines into CR and LFs 
-            options.c_lflag &= ~(ICANON | ISIG);
-            options.c_cc[VMIN]  = 1;                // 1 second timeout
-            options.c_cc[VTIME] = 5;
+        {
+            options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+            options.c_lflag &= ~(ECHOPRT);
         }
 
-        tcflush(_fd, TCIFLUSH);
-        tcflush(_fd, TCOFLUSH);
+        if( _flow == eFlow_Software )
+        {
+            options.c_cc[VSTART]   = '\021';
+            options.c_cc[VSTOP]    = '\023'; 
+        }
 
         if(tcsetattr(_fd, TCSANOW, &options)!= 0)
         {
@@ -400,7 +398,6 @@ void    SerialPort::applySettings(void)
             disconnect();
             THROW_RUNTIME_ERROR(err.str());
         }
-*/
     }
 }
 

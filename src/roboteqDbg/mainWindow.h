@@ -26,7 +26,7 @@
 using namespace std;
 using namespace oxoocoffee;
 
-class MainWindow : public IEventListener<IEventArgs>
+class MainWindow : public IEventListener<const IEventArgs>
 {
         typedef vector<string>  TVec;
 
@@ -77,31 +77,32 @@ class MainWindow : public IEventListener<IEventArgs>
         void    ProcessUserRequest(void);
 
         // RoboteqCom Events
-        virtual void OnMsgEvent(IEventArgs& evt);
+        virtual void OnMsgEvent(const IEventArgs& evt);
 
         void    Process_S(const IEventArgs& evt);
         void    Process_N(const IEventArgs& evt);
 
     private:
-        RoboteqLogger   _logger;
-        RoboteqCom      _comunicator;
-        RoboMutex       _mutex;            // Optionally used if RoboteqCom setup in threaded mode
-        string          _title;
-        WINDOW*         _top;
-        WINDOW*         _middle;
-        WINDOW*         _bottom;
-        int             _lines;
-        int             _parentX;
-        int             _parentY;
-        bool            _keepRunning;
-        bool            _winSizeChanged;
-        char            _inputBuffer[MaxBufferSize+1];
-        int             _inputLen;
+        RoboteqLogger       _logger;
+        RoboteqCom          _comunicator;
+        RoboMutex           _mutex;            // Optionally used if RoboteqCom setup in threaded mode
+        string              _title;
+        WINDOW*             _top;
+        WINDOW*             _middle;
+        WINDOW*             _bottom;
+        int                 _lines;
+        int                 _parentX;
+        int                 _parentY;
+        bool                _keepRunning;
+        bool                _winSizeChanged;
+        char                _inputBuffer[MaxBufferSize+1];
+        int                 _inputLen;
 
-        string          _device;
-        unsigned int    _looped;    // number ot restarts
-        unsigned int    _delay;     // 100ms minimum
-        TVec            _commands;        
+        string              _device;
+        unsigned int        _looped;    // number ot restarts
+        unsigned int        _delay;     // 100ms minimum
+        TVec                _commands;        
+        RoboteqCom::eMode   _mode;
 };
 
 #endif // __MAIN_WINDOW_H__

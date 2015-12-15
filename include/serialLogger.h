@@ -31,12 +31,12 @@ class SerialLogger
         virtual bool    IsLogOpen(void) const = 0;
 
 		// Write new line at end
-        virtual void    LogLine(const char* pBuffer, unsigned int len) {}
-        virtual void    LogLine(const std::string& message) {}
+        virtual void    LogLine(const char* pBuffer, unsigned int len) = 0;
+        virtual void    LogLine(const std::string& message) = 0;
 		
 		// DO NOT Write new line at end
-        virtual void    Log(const char* pBuffer, unsigned int len) {}
-        virtual void    Log(const std::string& message) {}
+        virtual void    Log(const char* pBuffer, unsigned int len) = 0;
+        virtual void    Log(const std::string& message) = 0;
 };
 
 }   // End of namespace oxoocoffee

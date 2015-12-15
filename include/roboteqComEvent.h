@@ -30,8 +30,8 @@ namespace oxoocoffee
                 eReal
             };
 
-            virtual void       OnMsgEvent(T& evt) = 0; 
-            inline const eType Type(void) const { return _type; }
+            virtual void  OnMsgEvent(const T& evt) = 0;
+            inline  eType Type(void) const { return _type; }
 
         private:
             eType _type;
@@ -46,7 +46,7 @@ namespace oxoocoffee
         public:
             IDummyListener(void) : IEventListener<T>(IEventListener<T>::eDummy) {}
 
-            virtual void OnMsgEvent(T& evt) {};
+            virtual void OnMsgEvent(const T&) {};
     };
 }
 

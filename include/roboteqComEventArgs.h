@@ -33,7 +33,9 @@ namespace oxoocoffee
 
 		    if( isalpha( _reply[0] ) == 0 )
 			    _reply = _reply.erase(0, 1);
-        }
+            }
+
+            IEventArgs(const IEventArgs& evt) : _reply(evt._reply) {}
 
         inline const string& Reply(void)   const { return _reply;   }
 

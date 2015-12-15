@@ -191,7 +191,7 @@ int main(int argc, char* argv[])
 void    ProcessSerialPort(const TStrParam& params)
 {
     unsigned int             baud(115200);
-    SerialPort::eCanonical   mode(SerialPort::eCanonical_Enable);
+    SerialPort::eCanonical   mode(SerialPort::eCanonical_Disable);
     SerialPort::eDataSize    dataSize(SerialPort::eDataSize_8Bit);
     SerialPort::eStopBit     stopBit(SerialPort::eStopBit_1);
     SerialPort::eParity      parity(SerialPort::eParity_None);
@@ -415,7 +415,7 @@ void    ProcessSerialPort(const TStrParam& params)
     }
 }
 
-void    ProcessSerialNetPort(const TStrParam& params)
+void    ProcessSerialNetPort(const TStrParam& /*params*/)
 {
     ScreenLogger   log;
     SerialNetPort  port(log);
@@ -504,8 +504,8 @@ void    PrintHelp(string progName)
     cout << "   -h          - this information" << endl;
     cout << "   -e          - echo to screen" << endl;
     cout << "               - serial parameters section " << endl;
-    cout << "    -f file    - file to transfer/save" << endl;
-    cout << "     -l        - com tty devices found on system" << endl;
+    cout << "   -f fil e    - file to transfer/save" << endl;
+    cout << "   -l          - com tty devices found on system" << endl;
     cout << "               - network parameters section " << endl;
 }
 

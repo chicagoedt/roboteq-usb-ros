@@ -28,7 +28,7 @@ void    RoboteqThread::Start(void)
         throw std::runtime_error("Cant start thread. It is already started");
     else
     {
-        if( pthread_create(&_thread, NULL, ThreadWrapper, (void*)&_runnable) != 0 )
+        if( ::pthread_create(&_thread, NULL, ThreadWrapper, (void*)&_runnable) != 0 )
             THROW_RUNTIME_ERROR("Couldn't start thread");
 
         _running = true;
@@ -41,7 +41,7 @@ void    RoboteqThread::Join(void)
     {
         _running = false;
 
-        if( pthread_join(_thread, NULL) != 0 )
+        if( ::pthread_join(_thread, NULL) != 0 )
             THROW_RUNTIME_ERROR("Couldn't join thread");
     }
 }

@@ -28,6 +28,8 @@ using namespace oxoocoffee;
 class RoboteqLogger : public SerialLogger
 {
     public:
+        RoboteqLogger(void);
+
         bool    Open(const string& filePath, bool threded);
         void    Close(void);
 
