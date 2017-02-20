@@ -149,8 +149,8 @@ void    RosRoboteqDrv::CmdVelCallback(const geometry_msgs::Twist::ConstPtr& twis
 
     if( _comunicator.Mode() == RoboteqCom::eSerial )
     {
-        ss << "!G " << _left << " " << (((int)leftVelRPM) * 100);
-        ss << "_!G " << _right << " " << (((int)rightVelRPM) * 100);
+        ss << "!G " << _left << " " << ((leftVelRPM) * 100);
+        ss << "_!G " << _right << " " << ((rightVelRPM) * 100);
     }
     else
     {
@@ -252,7 +252,7 @@ geometry_msgs::Twist RosRoboteqDrv::ConvertWheelVelocityToTwist(float left_veloc
     // linear.x is just the average of left and right wheel velocities converted to linear by multiplying it by radius
     twistVelocity.linear.x = ((left_velocity + right_velocity) / 2) * (WHEEL_DIAMETER_SCIPIO / 2);
 
-    twistVelocity.angular.z = (longitudinal_velocity * 2 * TRACK_WIDTH) / (TRACK_WIDTH * TRACK_WIDTH + WHEEL_BASE * WHEEL_BASE);
+    twistVelocity.angular.z = -1*(longitudinal_velocity * 2 * TRACK_WIDTH) / (TRACK_WIDTH * TRACK_WIDTH + WHEEL_BASE * WHEEL_BASE);
 
     return twistVelocity;
 }
@@ -316,13 +316,15 @@ void	RosRoboteqDrv::Process_S(const IEventArgs& evt)
                         int firstVal  = atoi( pVal1 );
                         int secondVal = atoi( pVal2 );
 
-			ROS_INFO_STREAM(firstVal << ":" << secondVal);
+			//ROS_INFO_STREAM(" ");
+			//ROS_INFO_STREAM("Roboteq Counter == " << firstVal << ":" << secondVal);
 
 			            roboteq_node::wheels_msg wheelVelocity;
 
-			            wheelVelocity.right 	= firstVal  * ENC_RPM_TO_MPS * 4;
-			            wheelVelocity.left		= secondVal * ENC_RPM_TO_MPS * 4;
-			ROS_INFO_STREAM("Calc == " << wheelVelocity.left << ":" << wheelVelocity.right);
+			            wheelVelocity.right 	= (int)(firstVal / 45.56) * RPM_TO_RAD_PER_SEC;
+			            wheelVelocity.left		= (int)(secondVal / 45.56) * RPM_TO_RAD_PER_SEC;
+			//ROS_INFO_STREAM(" ");
+			//ROS_INFO_STREAM("Shaft RPM ==       " << wheelVelocity.left << ":" << wheelVelocity.right);
 
                         _pub.publish(RosRoboteqDrv::ConvertWheelVelocityToTwist(wheelVelocity.left, wheelVelocity.right));
                         //ROS_INFO_STREAM("Wheel RPM's: " << firstVal << " :: " << secondVal);
