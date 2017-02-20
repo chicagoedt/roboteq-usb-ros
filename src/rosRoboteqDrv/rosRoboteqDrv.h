@@ -12,12 +12,13 @@
 
 /// Scipio dimensions and stuff
 #define METERS_PER_TICK_SCIPIO  0.0011169116
-#define WHEEL_DIAMETER_SCIPIO   0.3556
+#define WHEEL_DIAMETER_SCIPIO   0.330
 #define TICK_COLLECTION_PERIOD  0.05
-#define TRACK_WIDTH             0.8636    //34 inches
-#define WHEEL_BASE              0.5334    //21 inches
+#define TRACK_WIDTH             0.66 // 26 inches
+#define WHEEL_BASE              0.438    // 17.25 inches
 #define SLEEP_INTERVAL          0.05
 #define RPM_TO_RAD_PER_SEC      0.1047
+#define ENC_RPM_TO_MPS      0.0003731884057
 
 #define NODE_NAME	        "roboteq_node"
 

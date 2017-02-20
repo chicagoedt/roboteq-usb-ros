@@ -138,7 +138,9 @@ void    RosRoboteqDrv::CmdVelCallback(const geometry_msgs::Twist::ConstPtr& twis
 {
     _wheelVelocity = ConvertTwistToWheelVelocity(twist_velocity);
 
-    float leftVelRPM  = _wheelVelocity.left  / RPM_TO_RAD_PER_SEC;
+    ROS_WARN_STREAM("CTWV--  " << _wheelVelocity.left << "::" << _wheelVelocity.right);
+
+    float leftVelRPM  = _wheelVelocity.left / RPM_TO_RAD_PER_SEC;
     float rightVelRPM = _wheelVelocity.right / RPM_TO_RAD_PER_SEC;
 
     // now round the wheel velocity to int
@@ -314,10 +316,13 @@ void	RosRoboteqDrv::Process_S(const IEventArgs& evt)
                         int firstVal  = atoi( pVal1 );
                         int secondVal = atoi( pVal2 );
 
+			ROS_INFO_STREAM(firstVal << ":" << secondVal);
+
 			            roboteq_node::wheels_msg wheelVelocity;
 
-			            wheelVelocity.right 	= firstVal  * RPM_TO_RAD_PER_SEC;
-			            wheelVelocity.left		= secondVal * RPM_TO_RAD_PER_SEC;
+			            wheelVelocity.right 	= firstVal  * ENC_RPM_TO_MPS * 4;
+			            wheelVelocity.left		= secondVal * ENC_RPM_TO_MPS * 4;
+			ROS_INFO_STREAM("Calc == " << wheelVelocity.left << ":" << wheelVelocity.right);
 
                         _pub.publish(RosRoboteqDrv::ConvertWheelVelocityToTwist(wheelVelocity.left, wheelVelocity.right));
                         //ROS_INFO_STREAM("Wheel RPM's: " << firstVal << " :: " << secondVal);
